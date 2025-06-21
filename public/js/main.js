@@ -4,12 +4,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const stopBtn = document.getElementById('stopBtn');
 
     playBtn.addEventListener('click', () => {
-        audioPlayer.src = '/stream';
+        if (audioPlayer.src !== window.location.origin + '/stream') {
+            audioPlayer.src = '/stream';
+        }
         audioPlayer.play();
     });
 
     stopBtn.addEventListener('click', () => {
         audioPlayer.pause();
-        audioPlayer.src = ''; // Stop buffering
+        // We no longer set audioPlayer.src = '' to allow for pausing and resuming.
     });
 }); 
