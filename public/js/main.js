@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let isFirstPlay = true;
     let streamUrl = '/stream';
+    let wasStopped = false; // Track if user explicitly stopped vs just paused
 
     // Add error handling for audio player
     audioPlayer.addEventListener('error', (e) => {
@@ -36,20 +37,23 @@ document.addEventListener('DOMContentLoaded', () => {
         audioPlayer.src = '';
         audioPlayer.load();
         isFirstPlay = true;
+        wasStopped = false;
     }
 
     function startStream() {
-        if (isFirstPlay) {
-            console.log('Starting stream for first time');
-            audioPlayer.src = streamUrl;
+        if (isFirstPlay || wasStopped) {
+            // First play or resuming after stop - connect to live stream
+            console.log(isFirstPlay ? 'Starting stream for first time' : 'Reconnecting to live stream after stop');
+            audioPlayer.src = streamUrl + '?t=' + Date.now(); // Add timestamp to ensure fresh connection
             isFirstPlay = false;
+            wasStopped = false;
         } else {
             console.log('Resuming stream');
-            // For resume, check if we need to reconnect
+            // For resume after pause (not stop), check if we need to reconnect
             if (audioPlayer.readyState === HTMLMediaElement.HAVE_NOTHING || 
                 audioPlayer.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) {
                 console.log('Reconnecting to stream');
-                audioPlayer.src = streamUrl;
+                audioPlayer.src = streamUrl + '?t=' + Date.now();
             }
         }
         
@@ -57,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Playback failed:', err);
             // Reset and try again
             console.log('Retrying playback after error');
-            audioPlayer.src = streamUrl;
+            audioPlayer.src = streamUrl + '?t=' + Date.now();
             audioPlayer.play().catch(retryErr => {
                 console.error('Retry playback also failed:', retryErr);
             });
@@ -73,8 +77,10 @@ document.addEventListener('DOMContentLoaded', () => {
     stopBtn.addEventListener('click', () => {
         console.log('Stopping playback');
         audioPlayer.pause();
-        // Optional: reset to beginning
-        // audioPlayer.currentTime = 0;
+        wasStopped = true; // Mark as explicitly stopped
+        // Reset the audio element to disconnect from stream
+        audioPlayer.src = '';
+        audioPlayer.load();
     });
 
     // Clean up on page unload to prevent memory leaks
@@ -83,13 +89,8 @@ document.addEventListener('DOMContentLoaded', () => {
         resetAudioPlayer();
     });
 
-    // Handle page visibility changes (when tab becomes hidden/visible)
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-            console.log('Page hidden - pausing audio');
-            audioPlayer.pause();
-        }
-    });
+    // Removed the visibility change handler that was pausing audio when switching tabs
+    // Users should be able to listen to radio in background tabs
 
     // Periodic cleanup to prevent memory buildup (optional)
     setInterval(() => {
