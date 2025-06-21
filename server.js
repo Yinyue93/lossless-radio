@@ -87,7 +87,6 @@ class RadioBroadcaster extends EventEmitter {
         });
 
         stream.on('end', () => {
-            console.log(`Finished broadcasting: ${fileName}`);
             this.currentFileIndex++;
             this._streamNextFile();
         });
