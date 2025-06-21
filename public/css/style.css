@@ -101,4 +101,32 @@ input[type="file"]::file-selector-button {
 
 input[type="file"]::file-selector-button:hover {
     background-color: #1ed760;
+}
+
+.progress-container {
+    width: 100%;
+    background-color: #282828;
+    border: 1px solid #404040;
+    border-radius: 8px;
+    margin-top: 20px;
+    position: relative;
+    height: 30px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    width: 0;
+    height: 100%;
+    background-color: #1DB954;
+    transition: width 0.4s ease;
+    border-radius: 8px;
+}
+
+.progress-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #ffffff;
+    font-weight: 600;
 } 

@@ -78,7 +78,6 @@ class RadioBroadcaster extends EventEmitter {
             return;
         }
 
-        console.log(`Broadcasting: ${fileName}`);
         const stream = fs.createReadStream(filePath);
 
         stream.on('data', (chunk) => {

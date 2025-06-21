@@ -3,6 +3,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const flacFilesInput = document.getElementById('flacFiles');
     const playlistUl = document.getElementById('playlist');
     const saveOrderBtn = document.getElementById('saveOrderBtn');
+    const progressContainer = document.getElementById('uploadProgressContainer');
+    const progressBar = document.getElementById('uploadProgressBar');
+    const progressText = document.getElementById('uploadProgressText');
 
     let draggedItem = null;
 
@@ -22,24 +25,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
     uploadForm.addEventListener('submit', (e) => {
         e.preventDefault();
+        const files = flacFilesInput.files;
+        if (files.length === 0) {
+            return;
+        }
+
         const formData = new FormData();
-        for (const file of flacFilesInput.files) {
+        for (const file of files) {
             formData.append('flacFiles', file);
         }
 
-        fetch('/api/upload', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            alert(data.message);
-            fetchPlaylist(); // Refresh playlist
-        })
-        .catch(err => {
-            console.error('Upload failed', err);
-            alert('Upload failed.');
+        progressContainer.style.display = 'block';
+        progressBar.style.width = '0%';
+        progressText.textContent = '0%';
+
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+                const percentComplete = Math.round((e.loaded / e.total) * 100);
+                progressBar.style.width = percentComplete + '%';
+                progressText.textContent = percentComplete + '%';
+            }
         });
+
+        xhr.addEventListener('load', () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                const data = JSON.parse(xhr.responseText);
+                alert(data.message);
+                fetchPlaylist(); // Refresh playlist
+            } else {
+                 console.error('Upload failed with status', xhr.status);
+                alert('Upload failed.');
+            }
+            // Hide progress bar after a short delay
+            setTimeout(() => {
+                progressContainer.style.display = 'none';
+            }, 1000);
+        });
+
+        xhr.addEventListener('error', () => {
+            console.error('Upload failed');
+            alert('Upload failed.');
+            progressContainer.style.display = 'none';
+        });
+
+        xhr.open('POST', '/api/upload', true);
+        xhr.send(formData);
     });
 
     saveOrderBtn.addEventListener('click', () => {
