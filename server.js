@@ -18,16 +18,41 @@ class RadioBroadcaster extends EventEmitter {
         this.playlist = [];
         this.currentFileIndex = 0;
         this.isBroadcasting = false;
-        this.clients = new Set();
+        this.clients = new Map(); // Changed from Set to Map to track streams per client
     }
 
     addClient(res) {
-        this.clients.add(res);
-        console.log(`Client connected. Total clients: ${this.clients.size}`);
+        const clientInfo = {
+            response: res,
+            currentStream: null,
+            id: Date.now() + Math.random() // Simple unique ID
+        };
+        
+        this.clients.set(res, clientInfo);
+        console.log(`Client connected (ID: ${clientInfo.id}). Total clients: ${this.clients.size}`);
+        
         res.on('close', () => {
+            // Clean up stream when client disconnects
+            const client = this.clients.get(res);
+            if (client && client.currentStream) {
+                console.log(`Cleaning up stream for disconnected client (ID: ${client.id})`);
+                client.currentStream.destroy();
+            }
             this.clients.delete(res);
-            console.log(`Client disconnected. Total clients: ${this.clients.size}`);
+            console.log(`Client disconnected (ID: ${client.id}). Total clients: ${this.clients.size}`);
         });
+        
+        res.on('error', (err) => {
+            console.error(`Client error (ID: ${clientInfo.id}):`, err);
+            const client = this.clients.get(res);
+            if (client && client.currentStream) {
+                client.currentStream.destroy();
+            }
+            this.clients.delete(res);
+        });
+        
+        // Start streaming for this client
+        this._streamForClient(clientInfo);
     }
 
     async refreshPlaylist() {
@@ -54,13 +79,23 @@ class RadioBroadcaster extends EventEmitter {
             return;
         }
         this.isBroadcasting = true;
-        this.refreshPlaylist().then(() => this._streamNextFile());
+        this.refreshPlaylist();
     }
 
-    _streamNextFile() {
+    _streamForClient(clientInfo) {
+        // Check if client is still connected
+        if (!this.clients.has(clientInfo.response)) {
+            console.log(`Client (ID: ${clientInfo.id}) no longer connected, stopping stream`);
+            return;
+        }
+
         if (this.playlist.length === 0) {
             console.log("Playlist is empty. Waiting 5 seconds to retry.");
-            setTimeout(() => this._streamNextFile(), 5000);
+            setTimeout(() => {
+                if (this.clients.has(clientInfo.response)) {
+                    this._streamForClient(clientInfo);
+                }
+            }, 5000);
             return;
         }
 
@@ -74,28 +109,77 @@ class RadioBroadcaster extends EventEmitter {
         if (!fs.existsSync(filePath)) {
             console.error(`File not found: ${filePath}, skipping.`);
             this.currentFileIndex++;
-            this._streamNextFile();
+            this._streamForClient(clientInfo);
             return;
         }
 
+        // Clean up previous stream for this client
+        if (clientInfo.currentStream) {
+            console.log(`Cleaning up previous stream for client (ID: ${clientInfo.id})`);
+            clientInfo.currentStream.destroy();
+            clientInfo.currentStream = null;
+        }
+
+        console.log(`Starting stream for client (ID: ${clientInfo.id}): ${fileName}`);
         const stream = fs.createReadStream(filePath);
+        clientInfo.currentStream = stream;
 
         stream.on('data', (chunk) => {
-            for (const client of this.clients) {
-                client.write(chunk);
+            // Double-check client is still connected before writing
+            if (this.clients.has(clientInfo.response)) {
+                try {
+                    clientInfo.response.write(chunk);
+                } catch (err) {
+                    console.error(`Error writing to client (ID: ${clientInfo.id}):`, err);
+                    stream.destroy();
+                    this.clients.delete(clientInfo.response);
+                }
+            } else {
+                // Client disconnected, destroy stream
+                stream.destroy();
             }
         });
 
         stream.on('end', () => {
+            console.log(`Stream ended for client (ID: ${clientInfo.id}): ${fileName}`);
+            clientInfo.currentStream = null;
             this.currentFileIndex++;
-            this._streamNextFile();
+            
+            // Continue to next file if client is still connected
+            if (this.clients.has(clientInfo.response)) {
+                this._streamForClient(clientInfo);
+            }
         });
 
         stream.on('error', (err) => {
-            console.error('Stream error:', err);
+            console.error(`Stream error for client (ID: ${clientInfo.id}):`, err);
+            clientInfo.currentStream = null;
             this.currentFileIndex++;
-            this._streamNextFile();
+            
+            // Try next file if client is still connected
+            if (this.clients.has(clientInfo.response)) {
+                this._streamForClient(clientInfo);
+            }
         });
+
+        // Handle stream cleanup on destroy
+        stream.on('close', () => {
+            console.log(`Stream closed for client (ID: ${clientInfo.id})`);
+            if (clientInfo.currentStream === stream) {
+                clientInfo.currentStream = null;
+            }
+        });
+    }
+
+    // Method to force cleanup of all streams (useful for debugging)
+    cleanup() {
+        console.log('Forcing cleanup of all client streams');
+        for (const [res, clientInfo] of this.clients.entries()) {
+            if (clientInfo.currentStream) {
+                clientInfo.currentStream.destroy();
+                clientInfo.currentStream = null;
+            }
+        }
     }
 }
 
