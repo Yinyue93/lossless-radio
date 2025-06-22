@@ -10,9 +10,9 @@ const { PassThrough } = require('stream');
 const app = express();
 const port = 3000;
 
-const uploadsDir = path.join(__dirname, 'uploads');
+const uploadsDir = path.join(__dirname, 'uploads', 'audio');
 if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir);
+    fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 class RadioBroadcaster extends EventEmitter {
@@ -190,7 +190,7 @@ const radio = new RadioBroadcaster();
 radio.start();
 
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
+    destination: (req, file, cb) => cb(null, 'uploads/audio/'),
     filename: (req, file, cb) => cb(null, file.originalname)
 });
 const upload = multer({ storage });
