@@ -1,11 +1,11 @@
-// ✅ UPDATED SERVER.JS to fix memory leak using PassThrough stream
+// ✅ UPDATED SERVER.JS to fix memory leak using PassThrough stream and stream from live point
 
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { EventEmitter } = require('events');
-const { PassThrough } = require('stream'); // Added
+const { PassThrough } = require('stream');
 
 const app = express();
 const port = 3000;
@@ -24,11 +24,12 @@ class RadioBroadcaster extends EventEmitter {
         this.clients = new Map();
 
         this.masterStream = null;
-        this.sharedStream = null; // Added
+        this.sharedStream = null;
         this.currentFileName = null;
         this.broadcastStartTime = null;
         this.currentFileStartTime = null;
         this.isLooping = false;
+        this.byteOffset = 0; // NEW: Track how many bytes have been streamed
     }
 
     addClient(res) {
@@ -108,12 +109,19 @@ class RadioBroadcaster extends EventEmitter {
         console.log(`Starting global broadcast: ${fileName}`);
         this.currentFileName = fileName;
         this.currentFileStartTime = Date.now();
+        this.byteOffset = 0;
 
         if (this.masterStream) this.masterStream.destroy();
         if (this.sharedStream) this.sharedStream.destroy();
 
         this.masterStream = fs.createReadStream(filePath);
         this.sharedStream = new PassThrough();
+
+        // Track byte offset
+        this.masterStream.on('data', chunk => {
+            this.byteOffset += chunk.length;
+        });
+
         this.masterStream.pipe(this.sharedStream);
 
         this.masterStream.on('end', () => {
@@ -132,23 +140,32 @@ class RadioBroadcaster extends EventEmitter {
     _streamForClient(clientInfo) {
         if (!this.clients.has(clientInfo.response)) return;
 
-        if (!this.sharedStream) {
-            console.log("No shared stream yet, retrying in 2 seconds...");
+        const filePath = path.join(uploadsDir, this.currentFileName || '');
+
+        if (!fs.existsSync(filePath)) {
+            console.log("No current file to stream, retrying...");
             setTimeout(() => {
                 if (this.clients.has(clientInfo.response)) {
                     this._streamForClient(clientInfo);
                 }
-            }, 2000);
+            }, 1000);
             return;
         }
 
-        const clientStream = new PassThrough();
-        clientInfo.currentStream = clientStream;
+        const stream = fs.createReadStream(filePath, { start: this.byteOffset });
+        clientInfo.currentStream = stream;
 
-        this.sharedStream.pipe(clientStream).pipe(clientInfo.response);
+        stream.pipe(clientInfo.response);
 
-        clientInfo.response.on('close', () => {
-            clientStream.destroy();
+        stream.on('error', err => {
+            console.error(`Client stream error (ID: ${clientInfo.id}):`, err);
+            this.clients.delete(clientInfo.response);
+        });
+
+        stream.on('close', () => {
+            if (clientInfo.currentStream === stream) {
+                clientInfo.currentStream = null;
+            }
             this.clients.delete(clientInfo.response);
         });
     }
